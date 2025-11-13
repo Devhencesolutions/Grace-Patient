@@ -63,6 +63,8 @@ const Login = (props) => {
     setIsSubmit(true);
     setFormErrors(validate(values));
 
+    console.log("Login request payload:", values); // Log the request payload
+
     axios
       .post(
         `${process.env.REACT_APP_API_URL}/api/auth/userLoginPatient`,
@@ -70,23 +72,46 @@ const Login = (props) => {
       )
       .then((res) => {
         const payload = res?.data;
-        if (payload?.isOk) {
-          const user = payload.data;
-          localStorage.setItem("AdminUser", user?._id);
-          localStorage.setItem("Patient", user?.PatientName ?? "");
-          localStorage.setItem("Email Id", user?.Email ?? "");
-          localStorage.setItem(
-            "PatientReferenceNo",
-            user?.PatientReferenceNo ?? ""
-          );
-          window.location.replace("/profile");
+        console.log("Login response payload:", payload); // Log the response payload
+
+        // Support two possible response shapes:
+        // 1) { isOk: true, data: user }
+        // 2) legacy: user (plain object without isOk)
+        let user = null;
+
+        if (payload && typeof payload === "object") {
+          if (Object.prototype.hasOwnProperty.call(payload, "isOk")) {
+            // Standard shape
+            if (payload.isOk) user = payload.data;
+          } else if (payload._id) {
+            // Legacy: server returned user object directly
+            console.warn("Legacy login response detected (plain user object). Treating as success.");
+            user = payload;
+          }
+        }
+
+        if (user && user._id) {
+          console.log("Authentication successful, updating local storage...", user);
+          localStorage.setItem("AdminUser", user._id);
+          localStorage.setItem("Patient", user.PatientName ?? "");
+          localStorage.setItem("Email Id", user.Email ?? "");
+          localStorage.setItem("PatientReferenceNo", user.PatientReferenceNo ?? "");
+          // small delay to let logs flush in some environments
+          setTimeout(() => window.location.replace("/profile"), 100);
         } else {
-          toast.error(payload?.message || "Authentication failed!");
+          console.log("Authentication failed, displaying error message...", payload);
+          if (payload?.message === "Patient not Found") {
+            toast.error("Patient not found. Please check your email.");
+          } else if (payload?.message === "Authentication Failed") {
+            toast.error("Invalid password or account inactive.");
+          } else {
+            toast.error((payload && payload.message) || "Authentication failed!");
+          }
         }
       })
       .catch((err) => {
-        console.log(err);
-        toast.error("Authentication failed!");
+        console.log("Login error:", err); // Log the error
+        toast.error("An error occurred while logging in. Please try again later.");
       });
   };
 
